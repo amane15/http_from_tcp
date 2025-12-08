@@ -17,15 +17,48 @@ func main() {
 	}
 	defer file.Close()
 
-	buffer := make([]byte, 8)
-	for {
-		_, err := file.Read(buffer)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
+	linesChan := getLinesChannel(file)
+	for line := range linesChan {
+		fmt.Printf("read: %s\n", line)
+	}
+}
+
+func getLinesChannel(f io.ReadCloser) <-chan string {
+	lines := make(chan string)
+
+	go func() {
+		defer f.Close()
+		defer close(lines)
+		buffer := make([]byte, 8)
+		var currentLine []byte
+
+		for {
+			n, err := f.Read(buffer)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				log.Fatalf("error while reading file: %s", err)
 				break
 			}
-			log.Printf("Error while reading file: %v", err)
+			if n > 0 {
+				chunk := buffer[:n]
+				for _, b := range chunk {
+					if b == '\n' {
+						// fmt.Printf("read: %s\n", string(currentLine))
+						lines <- string(currentLine)
+						currentLine = currentLine[:0]
+					} else {
+						currentLine = append(currentLine, b)
+					}
+				}
+			}
 		}
-		fmt.Printf("read: %s\n", string(buffer))
-	}
+		if len(currentLine) > 0 {
+			// fmt.Printf("read: %s\n", string(currentLine))
+			lines <- string(currentLine)
+		}
+	}()
+
+	return lines
 }
