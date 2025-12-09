@@ -1,11 +1,11 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
+
+	"github.com/amane15/http_from_tcp/internal/request"
 )
 
 func main() {
@@ -20,52 +20,20 @@ func main() {
 		if err != nil {
 			log.Fatalf("error accepting connection: %s\n", err.Error())
 		}
+
 		fmt.Printf("connection at address %s has been established\n", conn.LocalAddr().String())
-		linesChan := getLinesChannel(conn)
-		for line := range linesChan {
-			fmt.Println(line)
+
+		req, err := request.RequestFromReader(conn)
+		if err != nil {
+			log.Fatalf("error while reading request: %s\n", err.Error())
+			return
 		}
+		fmt.Println("Request line:")
+		fmt.Printf("- Method: %s\n", req.RequestLine.Method)
+		fmt.Printf("- Target: %s\n", req.RequestLine.RequestTarget)
+		fmt.Printf("- Version: %s\n", req.RequestLine.HttpVersion)
+
 		conn.Close()
 		fmt.Println("channel is closed, closing connection")
 	}
-}
-
-func getLinesChannel(f io.ReadCloser) <-chan string {
-	lines := make(chan string)
-
-	go func() {
-		defer f.Close()
-		defer close(lines)
-		buffer := make([]byte, 8)
-		var currentLine []byte
-
-		for {
-			n, err := f.Read(buffer)
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				log.Fatalf("error while reading file: %s", err)
-				break
-			}
-			if n > 0 {
-				chunk := buffer[:n]
-				for _, b := range chunk {
-					if b == '\n' {
-						// fmt.Printf("read: %s\n", string(currentLine))
-						lines <- string(currentLine)
-						currentLine = currentLine[:0]
-					} else {
-						currentLine = append(currentLine, b)
-					}
-				}
-			}
-		}
-		if len(currentLine) > 0 {
-			// fmt.Printf("read: %s\n", string(currentLine))
-			lines <- string(currentLine)
-		}
-	}()
-
-	return lines
 }
