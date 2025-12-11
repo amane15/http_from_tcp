@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/amane15/http_from_tcp/internal/headers"
@@ -21,6 +22,7 @@ const (
 	requestStateInitialized requestState = iota
 	requestStateDone
 	requestStateParsingHeaders
+	requestStateParsingBody
 )
 
 type RequestLine struct {
@@ -32,7 +34,10 @@ type RequestLine struct {
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
-	state       requestState
+	Body        []byte
+
+	state          requestState
+	bodyLengthRead int
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
@@ -42,6 +47,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	req := &Request{
 		state:   requestStateInitialized,
 		Headers: headers.NewHeaders(),
+		Body:    make([]byte, 0),
 	}
 
 	for req.state != requestStateDone {
@@ -114,9 +120,37 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 			return 0, err
 		}
 		if done {
-			r.state = requestStateDone
+			r.state = requestStateParsingBody
 		}
 		return n, err
+
+	case requestStateParsingBody:
+		contentLengthHeader, ok := r.Headers.Get("Content-Length")
+		if !ok {
+			r.state = requestStateDone
+			return len(data), nil
+		}
+
+		if contentLengthHeader == "" && len(data) > 0 {
+			return 0, fmt.Errorf("no Content-Length but body exist")
+		}
+		contentLength, err := strconv.Atoi(contentLengthHeader)
+		if err != nil {
+			return 0, fmt.Errorf("invalid value passed for Content-Length header: %s", contentLengthHeader)
+		}
+
+		r.Body = append(r.Body, data...)
+		r.bodyLengthRead += len(data)
+
+		if r.bodyLengthRead > contentLength {
+			return 0, fmt.Errorf("Content-Length too large")
+		}
+
+		if r.bodyLengthRead == contentLength {
+			r.state = requestStateDone
+		}
+
+		return len(data), nil
 
 	case requestStateDone:
 		return 0, fmt.Errorf("error: trying to read data in a done state")

@@ -54,6 +54,12 @@ func (h Headers) Set(key, value string) {
 	h[key] = value
 }
 
+func (h Headers) Get(key string) (string, bool) {
+	key = strings.ToLower(key)
+	value, ok := h[key]
+	return value, ok
+}
+
 func isValidHeaderKey(key string) bool {
 	for _, c := range key {
 		if c > 127 {
