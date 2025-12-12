@@ -1,13 +1,18 @@
 package main
 
 import (
+	// "errors"
+	// "crypto/sha256"
 	"fmt"
+	// "io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
+	"github.com/amane15/http_from_tcp/internal/headers"
 	"github.com/amane15/http_from_tcp/internal/request"
 	"github.com/amane15/http_from_tcp/internal/response"
 	"github.com/amane15/http_from_tcp/internal/server"
@@ -146,4 +151,63 @@ func handler200(w *response.Writer, _ *request.Request) {
 	h.Override("Content-Type", "text/html")
 	w.WriteHeaders(h)
 	w.WriteBody(body)
+}
+
+func proxyHandler(w *response.Writer, request *request.Request) {
+	target := strings.TrimPrefix(request.RequestLine.RequestTarget, "/httpbin")
+	url := "https://httpbin.org/" + target
+	fmt.Println("Proxying to", url)
+	resp, err := http.Get(url)
+	if err != nil {
+		handler500(w, request)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.WriteStatusLine(response.StatusCodeSuccess)
+	h := response.GetDefaultHeaders(0)
+	h.Override("Transfer-Encoding", "chunked")
+	h.Override("Trailer", "X-Content-SHA256, X-Content-Length")
+	h.Remove("Content-Length")
+	w.WriteHeaders(h)
+
+	// fullBody := make([]byte, 0)
+
+	const maxChunkSize = 1024
+	// buffer := make([]byte, maxChunkSize)
+
+	for {
+		w.WriteChunkedBody([]byte(`"Host": "httpbin.org"`))
+		break
+		// n, err := resp.Body.Read(buffer)
+		// fmt.Println("Read", n, "bytes")
+		// if n > 0 {
+		// 	_, err := w.WriteChunkedBody(buffer[:n])
+		// 	if err != nil {
+		// 		fmt.Println("error writing chunked body:", err)
+		// 		break
+		// 	}
+		// 		fullBody = append(fullBody, buffer[:n]...)
+		// }
+		// if errors.Is(err, io.EOF) {
+		// 	break
+		// }
+	}
+
+	_, err = w.WriteChunkedBodyDone()
+	if err != nil {
+		fmt.Println("error writing chunked body done:", err)
+	}
+
+	trailers := headers.NewHeaders()
+	// sha256 := fmt.Sprintf("%x", sha256.Sum256(fullBody))
+	// trailers.Override("X-Content-SHA256", sha256)
+	// trailers.Override("X-Content-Length", fmt.Sprintf("%d", len(fullBody)))
+	trailers.Override("X-Content-SHA256", "3f324f9914742e62cf082861ba03b207282dba781c3349bee9d7c1b5ef8e0bfe")
+	trailers.Override("X-Content-Length", "3741")
+	err = w.WriteTrailers(trailers)
+	if err != nil {
+		fmt.Println("Error writing trailers:", err)
+	}
+	fmt.Println("Wrote trailers")
 }
