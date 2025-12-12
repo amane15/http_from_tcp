@@ -51,13 +51,18 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 }
 
 func (h Headers) Set(key, value string) {
-	h[key] = value
+	h[strings.ToLower(key)] = value
 }
 
 func (h Headers) Get(key string) (string, bool) {
 	key = strings.ToLower(key)
 	value, ok := h[key]
 	return value, ok
+}
+
+func (h Headers) Override(key, value string) {
+	key = strings.ToLower(key)
+	h[key] = value
 }
 
 func isValidHeaderKey(key string) bool {

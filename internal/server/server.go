@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"net"
@@ -10,6 +9,13 @@ import (
 	"github.com/amane15/http_from_tcp/internal/request"
 	"github.com/amane15/http_from_tcp/internal/response"
 )
+
+type HandlerError struct {
+	StatusCode response.StatusCode
+	Message    string
+}
+
+type Handler func(w *response.Writer, req *request.Request)
 
 type Server struct {
 	listener net.Listener
@@ -53,28 +59,42 @@ func (s *Server) listen() {
 	}
 }
 
+// func (s *Server) handle(conn net.Conn) {
+// 	defer conn.Close()
+//
+// 	req, err := request.RequestFromReader(conn)
+// 	if err != nil {
+// 		hErr := &HandlerError{
+// 			StatusCode: response.StatusCodeBadRequest,
+// 			Message:    err.Error(),
+// 		}
+// 		hErr.Write(conn)
+// 		return
+// 	}
+// 	buf := bytes.NewBuffer([]byte{})
+// 	hErr := s.handler(buf, req)
+// 	if hErr != nil {
+// 		hErr.Write(conn)
+// 		return
+// 	}
+// 	b := buf.Bytes()
+//
+// 	response.WriteStatusLine(conn, response.StatusCodeSuccess)
+// 	headers := response.GetDefaultHeaders(len(b))
+// 	response.WriteHeaders(conn, headers)
+// 	conn.Write(b)
+// }
+
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
-
+	w := response.NewWriter(conn)
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		hErr := &HandlerError{
-			StatusCode: response.StatusCodeBadRequest,
-			Message:    err.Error(),
-		}
-		hErr.Write(conn)
+		w.WriteStatusLine(response.StatusCodeBadRequest)
+		body := []byte(fmt.Sprintf("Error parsing request: %v", err))
+		w.WriteHeaders(response.GetDefaultHeaders(len(body)))
+		w.WriteBody(body)
 		return
 	}
-	buf := bytes.NewBuffer([]byte{})
-	hErr := s.handler(buf, req)
-	if hErr != nil {
-		hErr.Write(conn)
-		return
-	}
-	b := buf.Bytes()
-
-	response.WriteStatusLine(conn, response.StatusCodeSuccess)
-	headers := response.GetDefaultHeaders(len(b))
-	response.WriteHeaders(conn, headers)
-	conn.Write(b)
+	s.handler(w, req)
 }
